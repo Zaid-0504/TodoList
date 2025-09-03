@@ -1,21 +1,27 @@
 from flask import Flask, jsonify, request, abort
 from flask_pymongo import PyMongo
 from bson import ObjectId
+from asgiref.wsgi import WsgiToAsgi
+import os
 
+# Initialize Flask
 app = Flask(__name__)
 
-# MongoDB connection (change URI if needed)
-app.config["MONGO_URI"] = "mongodb+srv://itssubi76_db_user:BSUUQ3xC4lKHZXyn@todolistcluster.d9dwfi3.mongodb.net/?retryWrites=true&w=majority&appName=TodoListCluster"
+# Use MongoDB Atlas connection from environment variable
+app.config["MONGO_URI"] = os.environ.get("MONGO_URI")
 mongo = PyMongo(app)
 
+# Pick database explicitly
 db = mongo.cx["TodoListCluster"]
+
+# Ensure collection exists
 if "tasks" not in db.list_collection_names():
     db.create_collection("tasks")
 
 tasks_collection = db.tasks
 
 
-# Helper: convert MongoDB document to JSON-friendly dict
+# Helper function
 def task_to_json(task):
     return {
         "id": str(task["_id"]),
@@ -28,7 +34,7 @@ def task_to_json(task):
 # Routes
 @app.route("/", methods=["GET"])
 def home():
-    return jsonify({"message": "Welcome to the To-Do List API with Flask & MongoDB"})
+    return jsonify({"message": "Welcome to the To-Do List API with Flask & MongoDB on Vercel!"})
 
 
 @app.route("/tasks", methods=["GET"])
@@ -99,5 +105,5 @@ def delete_task(task_id):
     return jsonify({"message": f"Task {task_id} deleted successfully"})
 
 
-# if __name__ == "__main__":
-#     app.run(debug=True)
+# ✅ Wrap Flask app for Vercel
+asgi_app = WsgiToAsgi(app)
