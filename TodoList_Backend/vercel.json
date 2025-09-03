@@ -2,14 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "TodoList_Backend/index.py",
+      "src": "api/index.py",
       "use": "@vercel/python"
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "TodoList_Backend/index.py"
+      "dest": "api/index.py"
     }
   ]
 }
