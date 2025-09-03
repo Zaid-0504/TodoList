@@ -3,3 +3,4 @@ flask-pymongo
 gunicorn
 dnspython
 asgiref
+flask_cors
