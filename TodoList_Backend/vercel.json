@@ -9,8 +9,9 @@
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "api/index.py"
+      "dest": "TodoList_Backend/index.py"
     }
   ]
 }
+
 
