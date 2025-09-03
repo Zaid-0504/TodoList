@@ -1,28 +1,45 @@
-from flask import Flask, jsonify, request, abort
-from flask_pymongo import PyMongo
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import Optional
 from bson import ObjectId
-from asgiref.wsgi import WsgiToAsgi
+from pymongo import MongoClient
 import os
 
-# Initialize Flask
-app = Flask(__name__)
+# MongoDB Connection
+MONGO_URI = os.environ.get("MONGO_URI")
+client = MongoClient(MONGO_URI)
+db = client["TodoListCluster"]
 
-# Use MongoDB Atlas connection from environment variable
-app.config["MONGO_URI"] = os.environ.get("MONGO_URI")
-mongo = PyMongo(app)
-
-# Pick database explicitly
-db = mongo.cx["TodoListCluster"]
-
-# Ensure collection exists
 if "tasks" not in db.list_collection_names():
     db.create_collection("tasks")
 
 tasks_collection = db.tasks
 
+# FastAPI app
+app = FastAPI()
 
-# Helper function
-def task_to_json(task):
+# Enable CORS (adjust origins for production)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],   # or ["https://your-frontend.vercel.app"]
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Pydantic Models
+class TaskIn(BaseModel):
+    title: str
+    description: Optional[str] = ""
+
+class TaskOut(TaskIn):
+    id: str
+    completed: bool = False
+
+
+# Helper to convert MongoDB -> JSON
+def task_to_json(task) -> dict:
     return {
         "id": str(task["_id"]),
         "title": task["title"],
@@ -32,78 +49,66 @@ def task_to_json(task):
 
 
 # Routes
-@app.route("/", methods=["GET"])
-def home():
-    return jsonify({"message": "Welcome to the To-Do List API with Flask & MongoDB on Vercel!"})
+@app.get("/")
+async def home():
+    return {"message": "Welcome to the To-Do List API with FastAPI & MongoDB on Vercel!"}
 
 
-@app.route("/tasks", methods=["GET"])
-def get_tasks():
+@app.get("/tasks", response_model=list[TaskOut])
+async def get_tasks():
     tasks = tasks_collection.find()
-    return jsonify([task_to_json(task) for task in tasks])
+    return [task_to_json(task) for task in tasks]
 
 
-@app.route("/tasks/<task_id>", methods=["GET"])
-def get_task(task_id):
+@app.get("/tasks/{task_id}", response_model=TaskOut)
+async def get_task(task_id: str):
     task = tasks_collection.find_one({"_id": ObjectId(task_id)})
     if not task:
-        abort(404, description="Task not found")
-    return jsonify(task_to_json(task))
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task_to_json(task)
 
 
-@app.route("/tasks", methods=["POST"])
-def create_task():
-    data = request.get_json()
-    if not data or "title" not in data:
-        abort(400, description="Title is required")
-
-    task = {
-        "title": data["title"],
-        "description": data.get("description", ""),
-        "completed": False
+@app.post("/tasks", response_model=TaskOut, status_code=201)
+async def create_task(task: TaskIn):
+    new_task = {
+        "title": task.title,
+        "description": task.description,
+        "completed": False,
     }
-    result = tasks_collection.insert_one(task)
-    task["_id"] = result.inserted_id
-    return jsonify(task_to_json(task)), 201
+    result = tasks_collection.insert_one(new_task)
+    new_task["_id"] = result.inserted_id
+    return task_to_json(new_task)
 
 
-@app.route("/tasks/<task_id>", methods=["PUT"])
-def update_task(task_id):
-    data = request.get_json()
-    if not data or "title" not in data:
-        abort(400, description="Title is required")
-
+@app.put("/tasks/{task_id}", response_model=TaskOut)
+async def update_task(task_id: str, task: TaskIn):
     result = tasks_collection.update_one(
         {"_id": ObjectId(task_id)},
-        {"$set": {"title": data["title"], "description": data.get("description", "")}}
+        {"$set": {"title": task.title, "description": task.description}},
     )
     if result.matched_count == 0:
-        abort(404, description="Task not found")
+        raise HTTPException(status_code=404, detail="Task not found")
 
-    task = tasks_collection.find_one({"_id": ObjectId(task_id)})
-    return jsonify(task_to_json(task))
+    updated_task = tasks_collection.find_one({"_id": ObjectId(task_id)})
+    return task_to_json(updated_task)
 
 
-@app.route("/tasks/<task_id>/complete", methods=["PATCH"])
-def complete_task(task_id):
+@app.patch("/tasks/{task_id}/complete", response_model=TaskOut)
+async def complete_task(task_id: str):
     result = tasks_collection.update_one(
         {"_id": ObjectId(task_id)},
-        {"$set": {"completed": True}}
+        {"$set": {"completed": True}},
     )
     if result.matched_count == 0:
-        abort(404, description="Task not found")
+        raise HTTPException(status_code=404, detail="Task not found")
 
     task = tasks_collection.find_one({"_id": ObjectId(task_id)})
-    return jsonify(task_to_json(task))
+    return task_to_json(task)
 
 
-@app.route("/tasks/<task_id>", methods=["DELETE"])
-def delete_task(task_id):
+@app.delete("/tasks/{task_id}")
+async def delete_task(task_id: str):
     result = tasks_collection.delete_one({"_id": ObjectId(task_id)})
     if result.deleted_count == 0:
-        abort(404, description="Task not found")
-    return jsonify({"message": f"Task {task_id} deleted successfully"})
-
-
-# ✅ Wrap Flask app for Vercel
-asgi_app = WsgiToAsgi(app)
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {"message": f"Task {task_id} deleted successfully"}

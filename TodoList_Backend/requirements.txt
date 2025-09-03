@@ -1,6 +1,4 @@
-flask
-flask-pymongo
-gunicorn
+fastapi
+uvicorn
+pymongo
 dnspython
-asgiref
-flask_cors
